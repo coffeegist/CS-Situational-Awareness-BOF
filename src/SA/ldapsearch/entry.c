@@ -11,7 +11,7 @@
 #include "bofdefs.h"
 #include "base.c"
 #define SECURITY_WIN32
-#include <secext.h> 
+#include <secext.h>
 
 #define MAX_ATTRIBUTES 100
 
@@ -20,7 +20,7 @@ typedef long (*_RpcStringFreeA)(RPC_CSTR *String);
 typedef ULONG LDAPAPI (*_ldap_search_abondon_page)(PLDAP h, PLDAPSearch S);
 _fuuidtostring fuuidtostring = (void *)1;
 _RpcStringFreeA frpcstringfree = (void *)1;
-HMODULE rpcrt = (void *)1; 
+HMODULE rpcrt = (void *)1;
 
 typedef LDAP *LDAPAPI (*ldap_init_t)(PSTR HostName, ULONG PortNumber);
 typedef ULONG LDAPAPI (*ldap_bind_s_t)(LDAP *ld, const PSTR dn, const PCHAR cred, ULONG method);
@@ -95,7 +95,7 @@ LDAPControlA *FormatSDFlags(int iFlagValue)
   // Cleanup temporary berval.
   WLDAP32$ber_bvfree(pldctrl_value);
 
-  // Memory leak, need to free memz 
+  // Memory leak, need to free memz
   // Freeing will be easier if I just pass the pLControl pointer in by ref
 
   // Return the formatted LDAPControl data.
@@ -106,7 +106,7 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName){
 	LDAP* pLdapConnection = NULL;
 
     pLdapConnection = WLDAP32$ldap_init(hostName, 389);
-    
+
     if (pLdapConnection == NULL)
     {
       	BeaconPrintf(CALLBACK_ERROR, "Failed to establish LDAP connection on 389.");
@@ -130,13 +130,13 @@ LDAP* InitialiseLDAPConnection(PCHAR hostName, PCHAR distinguishedName){
     {
     	BeaconPrintf(CALLBACK_ERROR, "Bind Failed: %lu", lRtn);
         WLDAP32$ldap_unbind(pLdapConnection);
-        pLdapConnection = NULL; 
+        pLdapConnection = NULL;
     }
     return pLdapConnection;
 }
 
 PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, char * ldap_filter, char * ldap_attributes, ULONG maxResults){
-	
+
     internal_printf("[*] Filter: %s\n",ldap_filter);
 
     ULONG errorCode = LDAP_SUCCESS;
@@ -145,8 +145,6 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
 	if(ldap_attributes){
         internal_printf("[*] Returning specific attribute(s): %s\n",ldap_attributes);
 
-
-        
         int attribute_count = 0;
         char *token = NULL;
         const char s[2] = ","; //delimiter
@@ -165,16 +163,20 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
         }
     }
 
-        
-    LDAPControlA simpleControl;
+    PLDAPControlA simpleControl = NULL;
     PLDAPControlA controlArray[2];
 
-    simpleControl = *FormatSDFlags(OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION);
-    
-    controlArray[0] = &simpleControl;
+    simpleControl = FormatSDFlags(OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION);
+
+    if (simpleControl == NULL) {
+        BeaconPrintf(CALLBACK_ERROR, "Failure to format security descriptor flags, aborting...");
+        return NULL;
+    }
+
+    controlArray[0] = simpleControl;
     controlArray[1] = NULL;
 
-		pSearchResult = WLDAP32$ldap_search_init_pageA(
+	pSearchResult = WLDAP32$ldap_search_init_pageA(
         pLdapConnection,    // Session handle
         distinguishedName,  // DN to start search
         LDAP_SCOPE_SUBTREE, // Scope
@@ -185,9 +187,10 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
         NULL,
         15,
         maxResults,
-        NULL);    // [out] Search results
-    
-    if (pSearchResult == NULL) 
+        NULL
+    );    // [out] Search results
+
+    if (pSearchResult == NULL)
     {
         BeaconPrintf(CALLBACK_ERROR, "Paging not supported on this server, aborting");
     }
@@ -197,7 +200,7 @@ PLDAPSearch ExecuteLDAPQuery(LDAP* pLdapConnection, PCHAR distinguishedName, cha
 
 void customAttributes(PCHAR pAttribute, PCHAR pValue)
 {
-    if(MSVCRT$strcmp(pAttribute, "objectGUID") == 0) 
+    if(MSVCRT$strcmp(pAttribute, "objectGUID") == 0)
     {
         if(fuuidtostring == (void *)1) // I'm doing this because we ran out of function slots for dynamic function resolution
         {
@@ -210,7 +213,7 @@ void customAttributes(PCHAR pAttribute, PCHAR pValue)
         //RPCRT4$UuidToStringA((UUID *) tmp->bv_val, &G);
         fuuidtostring((UUID *) tmp->bv_val, &G);
         internal_printf("%s", G);
-        //RPCRT4$RpcStringFreeA(&G);       
+        //RPCRT4$RpcStringFreeA(&G);
         frpcstringfree(&G);
     }
     else if(MSVCRT$strcmp(pAttribute, "objectSid") == 0)
@@ -259,12 +262,13 @@ void customAttributes(PCHAR pAttribute, PCHAR pValue)
         }
 
         internal_printf("%s", base64String);
+        MSVCRT$free(base64String);
+        base64String = NULL;
     }
     else
     {
         internal_printf("%s", pValue);
     }
-    
 }
 
 void printAttribute(PCHAR pAttribute, PCHAR* ppValue){
@@ -282,11 +286,11 @@ void printAttribute(PCHAR pAttribute, PCHAR* ppValue){
 void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count, char * hostname, char * domain){
     char szDN[1024] = {0};
 	ULONG ulSize = sizeof(szDN)/sizeof(szDN[0]);
-	
+
     BOOL res = (domain) ? TRUE : SECUR32$GetUserNameExA(NameFullyQualifiedDN, szDN, &ulSize);
     DWORD dwRet = 0;
     PDOMAIN_CONTROLLER_INFO pdcInfo = NULL;
-    LDAP* pLdapConnection = NULL; 
+    LDAP* pLdapConnection = NULL;
     PLDAPSearch pPageHandle = NULL;
     PLDAPMessage pSearchResult = NULL;
     char* distinguishedName = NULL;
@@ -308,7 +312,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 
 	distinguishedName = (domain) ? domain : MSVCRT$strstr(szDN, "DC");
 	if(distinguishedName != NULL && res) {
-    	internal_printf("[*] Distinguished name: %s\n", distinguishedName);	
+    	internal_printf("[*] Distinguished name: %s\n", distinguishedName);
 	}
 	else{
 		BeaconPrintf(CALLBACK_ERROR, "Failed to retrieve distinguished name.");
@@ -319,11 +323,11 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 	////////////////////////////
 	// Retrieve PDC
 	////////////////////////////
-    
+
     dwRet = NETAPI32$DsGetDcNameA(NULL, NULL, NULL, NULL, 0, &pdcInfo);
     if (ERROR_SUCCESS == dwRet) {
         if(!hostname){
-            internal_printf("[*] targeting DC: %s\n", pdcInfo->DomainControllerName);       
+            internal_printf("[*] targeting DC: %s\n", pdcInfo->DomainControllerName);
         }
     } else {
         BeaconPrintf(CALLBACK_ERROR, "Failed to identify PDC, are we domain joined?");
@@ -345,7 +349,10 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 	//////////////////////////////
 	// Perform LDAP Search
 	//////////////////////////////
-	pPageHandle = ExecuteLDAPQuery(pLdapConnection, distinguishedName, ldap_filter, ldap_attributes, results_count);   
+	pPageHandle = ExecuteLDAPQuery(pLdapConnection, distinguishedName, ldap_filter, ldap_attributes, results_count);
+    if(pPageHandle == NULL) {
+        goto end;
+    }
     ULONG pagecount = 0;
     do
     {
@@ -359,7 +366,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         DWORD numberOfEntries = WLDAP32$ldap_count_entries(
                             pLdapConnection,    // Session handle
                             pSearchResult);     // Search result
-        
+
         if(numberOfEntries == -1) // -1 is functions return value when it failed
         {
             BeaconPrintf(CALLBACK_ERROR, "Failed to count search results.");
@@ -369,8 +376,8 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         {
             BeaconPrintf(CALLBACK_ERROR, "Search returned zero results");
             goto end;
-        }    
-        
+        }
+
         totalResults += numberOfEntries;
 
 
@@ -383,18 +390,18 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                 {pEntry = WLDAP32$ldap_first_entry(pLdapConnection, pSearchResult);}
             else
                 {pEntry = WLDAP32$ldap_next_entry(pLdapConnection, pEntry);}
-            
+
             if( pEntry == NULL )
             {
                 break;
             }
-                    
+
             // Get the first attribute name.
             pAttribute = WLDAP32$ldap_first_attribute(
                         pLdapConnection,   // Session handle
                         pEntry,            // Current entry
                         &pBer);            // [out] Current BerElement
-            
+
             // Output the attribute names for the current object
             // and output values.
             while(pAttribute != NULL)
@@ -419,7 +426,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 
 
                 // Use and Free memory.
-                if(ppValue != NULL)  
+                if(ppValue != NULL)
                 {
                     printAttribute(pAttribute, ppValue);
                     if(isbinary)
@@ -429,14 +436,14 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
                     ppValue = NULL;
                 }
                 WLDAP32$ldap_memfree(pAttribute);
-                
+
                 // Get next attribute name.
                 pAttribute = WLDAP32$ldap_next_attribute(
                     pLdapConnection,   // Session Handle
                     pEntry,            // Current entry
                     pBer);             // Current BerElement
             }
-            
+
             if( pBer != NULL )
             {
                 WLDAP32$ber_free(pBer,0);
@@ -450,7 +457,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
         WLDAP32$ldap_msgfree(pSearchResult); pSearchResult = NULL;
     }while(stat == LDAP_SUCCESS);
 
-    end: 
+    end:
     internal_printf("\nretreived %lu results total\n", totalResults);
     if(pPageHandle)
     {
@@ -480,7 +487,7 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
     {
         WLDAP32$ldap_value_free(ppValue);
         ppValue = NULL;
-    }    
+    }
     if(wldap)
     {
         FreeLibrary(wldap);
@@ -490,10 +497,10 @@ void ldapSearch(char * ldap_filter, char * ldap_attributes,	ULONG results_count,
 }
 
 #ifdef BOF
-VOID go( 
-	IN PCHAR Buffer, 
-	IN ULONG Length 
-) 
+VOID go(
+	IN PCHAR Buffer,
+	IN ULONG Length
+)
 {
 	datap  parser;
 	char * ldap_filter;
